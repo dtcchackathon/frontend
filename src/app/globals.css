@@ -1,0 +1,138 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Theme 1 (default) */
+    --background: 243 100% 98%;
+    --foreground: 222.2 84% 4.9%;
+    --card: 0 0% 100%;
+    --card-foreground: 222.2 84% 4.9%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 222.2 84% 4.9%;
+    --primary: 221.2 83.2% 53.3%;
+    --primary-foreground: 210 40% 98%;
+    --secondary: 210 40% 96.1%;
+    --secondary-foreground: 222.2 47.4% 11.2%;
+    --muted: 210 40% 96.1%;
+    --muted-foreground: 215.4 16.3% 46.9%;
+    --accent: 210 40% 96.1%;
+    --accent-foreground: 222.2 47.4% 11.2%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 214.3 31.8% 91.4%;
+    --input: 214.3 31.8% 91.4%;
+    --ring: 221.2 83.2% 53.3%;
+    --radius: 0.5rem;
+    /* Status colors */
+    --status-completed-bg: 144 71% 90%; /* light green */
+    --status-completed-text: 144 71% 30%; /* green */
+    --status-inprogress-bg: 210 100% 95%; /* light blue */
+    --status-inprogress-text: 210 100% 40%; /* blue */
+    --status-error-bg: 0 100% 95%; /* light red */
+    --status-error-text: 0 100% 40%; /* red */
+  }
+  .theme-2 {
+    /* Theme 2 */
+    --background: 48 100% 96%; /* light yellow */
+    --foreground: 30 100% 10%; /* dark orange */
+    --primary: 16 100% 50%;    /* orange */
+    --primary-foreground: 48 100% 96%;
+    --secondary: 210 40% 96.1%;
+    --secondary-foreground: 30 100% 10%;
+    --accent: 16 100% 90%;
+    --accent-foreground: 30 100% 10%;
+    --border: 16 100% 80%;
+    /* Status colors */
+    --status-completed-bg: 90 60% 90%; /* light olive */
+    --status-completed-text: 90 60% 30%; /* olive */
+    --status-inprogress-bg: 39 100% 90%; /* light orange */
+    --status-inprogress-text: 39 100% 40%; /* orange */
+    --status-error-bg: 0 100% 90%; /* light red */
+    --status-error-text: 0 100% 40%; /* red */
+  }
+  .theme-3 {
+    /* Theme 3 */
+    --background: 210 60% 98%; /* light blue */
+    --foreground: 222 47% 11%; /* navy */
+    --primary: 160 100% 40%;   /* teal */
+    --primary-foreground: 210 60% 98%;
+    --secondary: 160 60% 90%;
+    --secondary-foreground: 222 47% 11%;
+    --accent: 160 100% 90%;
+    --accent-foreground: 222 47% 11%;
+    --border: 160 60% 80%;
+    /* Status colors */
+    --status-completed-bg: 160 100% 90%; /* light teal */
+    --status-completed-text: 160 100% 30%; /* teal */
+    --status-inprogress-bg: 210 100% 90%; /* light blue */
+    --status-inprogress-text: 210 100% 40%; /* blue */
+    --status-error-bg: 340 100% 90%; /* light pink */
+    --status-error-text: 340 100% 40%; /* pink */
+  }
+  .theme-4 {
+    /* Theme 4: Dark Blue */
+    --background: 220 30% 8%;         /* very dark blue */
+    --foreground: 210 20% 98%;        /* almost white */
+    --card: 220 30% 18%;              /* dark blue, lighter than background */
+    --card-foreground: 210 20% 98%;   /* almost white */
+    --primary: 220 100% 60%;
+    --primary-foreground: 210 20% 98%; 
+    --secondary: 220 30% 20%;
+    --secondary-foreground: 210 20% 98%;
+    --accent: 220 100% 30%;
+    --accent-foreground: 210 20% 98%;
+    --border: 220 30% 30%;
+    /* Status colors */
+    --status-completed-bg: 160 100% 20%;
+    --status-completed-text: 160 100% 70%;
+    --status-inprogress-bg: 210 100% 20%;
+    --status-inprogress-text: 210 100% 70%;
+    --status-error-bg: 0 100% 20%;
+    --status-error-text: 0 100% 70%;
+  }
+  .theme-5 {
+    /* Theme 5: Dark Purple */
+    --background: 270 30% 10%;        /* very dark purple */
+    --foreground: 270 20% 96%;        /* almost white */
+    --card: 270 30% 20%;              /* dark purple, lighter than background */
+    --card-foreground: 270 20% 96%;   /* almost white */
+    --primary: 285 100% 60%;
+    --primary-foreground: 270 20% 96%; 
+    --secondary: 270 30% 22%;
+    --secondary-foreground: 270 20% 96%;
+    --accent: 285 100% 30%;
+    --accent-foreground: 270 20% 96%;
+    --border: 285 30% 30%;
+    /* Status colors */
+    --status-completed-bg: 160 100% 25%;
+    --status-completed-text: 160 100% 75%;
+    --status-inprogress-bg: 285 100% 25%;
+    --status-inprogress-text: 285 100% 75%;
+    --status-error-bg: 0 100% 25%;
+    --status-error-text: 0 100% 75%;
+  }
+}
+
+@layer base {
+  body {
+    background-color: hsl(var(--background));
+    color: hsl(var(--foreground));
+  }
+}
+
+.animate-in {
+  animation: animate-in 0.5s ease-out;
+}
+
+@keyframes animate-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+} 
