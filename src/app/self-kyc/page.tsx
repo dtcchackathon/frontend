@@ -1080,3 +1080,71 @@ export default function SelfKycPage() {
                         </span>
                         <span className="ml-3 flex min-w-0 flex-col">
                           <span className={`
+                            text-sm font-medium ${
+                              currentStep === index - 1 ? 'text-indigo-600' : 'text-gray-500'
+                            }
+                          `}>
+                            {step.name}
+                          </span>
+                          <span className="text-sm text-gray-500">{step.description}</span>
+                        </span>
+                      </div>
+                    </li>
+                  ))}
+                </ol>
+              </nav>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Confirmation Dialog */}
+      {showConfirmation && (
+        <ConfirmationDialog
+          isOpen={showConfirmation}
+          onClose={() => setShowConfirmation(false)}
+          onConfirm={handleConfirmSubmit}
+          isLoading={isSubmitting}
+        >
+          <div className="sm:flex sm:items-start">
+            <div className="mx-auto flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-full bg-indigo-100 sm:mx-0 sm:h-10 sm:w-10">
+              <CheckCircleIcon className="h-6 w-6 text-indigo-600" aria-hidden="true" />
+            </div>
+            <div className="mt-3 text-center sm:ml-4 sm:mt-0 sm:text-left">
+              <h3 className="text-lg font-semibold leading-6 text-gray-900">
+                Submit KYC Application
+              </h3>
+              <div className="mt-2">
+                <p className="text-sm text-gray-500">
+                  Are you sure you want to submit your KYC application? This action cannot be undone.
+                </p>
+              </div>
+            </div>
+          </div>
+        </ConfirmationDialog>
+      )}
+
+      {/* Success Modal */}
+      {showSuccessModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
+          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
+            <div className="text-center">
+              <CheckCircleIcon className="mx-auto h-12 w-12 text-green-500 mb-4" />
+              <h3 className="text-lg font-medium text-gray-900 mb-2">KYC Submitted Successfully!</h3>
+              <p className="text-sm text-gray-600 mb-4">
+                Your KYC application has been submitted and is under review. You will receive updates via email and SMS.
+              </p>
+              <button
+                type="button"
+                onClick={() => setShowSuccessModal(false)}
+                className="inline-flex items-center rounded-md border border-transparent bg-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}

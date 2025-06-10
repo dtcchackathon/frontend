@@ -11,6 +11,39 @@ import {
   InformationCircleIcon
 } from '@heroicons/react/24/outline'
 
+interface Address {
+  line1: string
+  line2: string
+  city: string
+  state: string
+  country: string
+  postalCode: string
+}
+
+interface FormData {
+  salutation: string
+  title: string
+  firstName: string
+  middleName: string
+  lastName: string
+  dob: string
+  nationality: string
+  gender: string
+  govtId: string
+  occupation: string
+  employer: string
+  sourceOfFunds: string
+  pep: string
+  altPhone: string
+  email: string
+  phone: string
+  personalAddress: Address
+  legalAddress: Address
+  sameAsPersonalAddress: boolean
+  mailingAddress: Address
+  mailingAddressType: 'personal' | 'legal' | 'custom'
+}
+
 const steps = [
   { id: 'id-upload', name: 'Upload ID', status: 'current' },
   { id: 'photo-upload', name: 'Upload Photo', status: 'upcoming' },
@@ -23,7 +56,7 @@ const steps = [
 export default function NewKycForm() {
   const [currentStep, setCurrentStep] = useState(0)
   const [files, setFiles] = useState<File[]>([])
-  const [form, setForm] = useState({
+  const [form, setForm] = useState<FormData>({
     salutation: '',
     title: '',
     firstName: '',
@@ -156,17 +189,38 @@ export default function NewKycForm() {
       }
     } else if (name.startsWith('personalAddress.') || name.startsWith('legalAddress.') || name.startsWith('mailingAddress.')) {
       const [addressType, field] = name.split('.')
-      setForm(prev => ({
-        ...prev,
-        [addressType]: {
-          ...prev[addressType as keyof typeof prev],
-          [field]: value
+      setForm(prev => {
+        if (addressType === 'personalAddress') {
+          return {
+            ...prev,
+            personalAddress: {
+              ...prev.personalAddress,
+              [field]: value
+            }
+          }
+        } else if (addressType === 'legalAddress') {
+          return {
+            ...prev,
+            legalAddress: {
+              ...prev.legalAddress,
+              [field]: value
+            }
+          }
+        } else if (addressType === 'mailingAddress') {
+          return {
+            ...prev,
+            mailingAddress: {
+              ...prev.mailingAddress,
+              [field]: value
+            }
+          }
         }
-      }))
+        return prev
+      })
     } else if (name === 'mailingAddressType') {
       setForm(prev => ({
         ...prev,
-        mailingAddressType: value,
+        mailingAddressType: value as 'personal' | 'legal' | 'custom',
         mailingAddress: value === 'personal' ? prev.personalAddress : 
                       value === 'legal' ? prev.legalAddress : 
                       prev.mailingAddress

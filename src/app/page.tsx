@@ -165,10 +165,15 @@ export default function Dashboard() {
             </div>
             <div className="mt-8">
               <CustomerTable
-                customers={recentActivity.map(a => ({ id: nameToCustomerId[a.name], name: a.name, email: nameToEmail[a.name] }))}
+                customers={recentActivity.map(a => ({ 
+                  id: nameToCustomerId[a.name], 
+                  name: a.name, 
+                  email: nameToEmail[a.name],
+                  kycCaseId: customerIdToKycId[nameToCustomerId[a.name]]
+                }))}
                 statuses={Object.fromEntries(recentActivity.map(a => [nameToCustomerId[a.name], mockStatuses[nameToCustomerId[a.name]]]))}
                 extraActions={(customer) => {
-                  const kycId = customerIdToKycId[customer.id];
+                  const kycId = customer.kycCaseId;
                   const status = mockStatuses[customer.id];
                   const isDisabled = status === 'Verified';
                   return (
