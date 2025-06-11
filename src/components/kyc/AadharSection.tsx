@@ -22,6 +22,7 @@ import {
   Bars3Icon,
   XMarkIcon as XMarkIconSolid,
 } from '@heroicons/react/24/outline'
+import { uploadToNewService, UploadResponse } from "@/services/uploadService";
 
 interface AadharSectionProps {
   kycCaseId: string;
@@ -69,46 +70,47 @@ export function AadharSection({ kycCaseId, onComplete, onFileUploaded }: AadharS
     const fileState = selectedFiles[type];
     if (!fileState.file) return;
 
-    const formData = new FormData();
-    formData.append("file", fileState.file);
-    formData.append("doc_type", `aadhar_${type}`);
-
     // Convert kycCaseId to number and validate
     const caseId = parseInt(kycCaseId, 10);
     if (isNaN(caseId)) {
       toast.error("Invalid KYC case ID");
       return;
     }
-    formData.append("kyc_case_id", caseId.toString());
 
     setUploading(prev => ({ ...prev, [type]: true }));
 
     try {
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
-      const response = await fetch(
-        `${apiUrl}/kyc/upload`,
-        {
-          method: "POST",
-          body: formData,
-          headers: {
-            Accept: "application/json",
-          },
+      // Use the new upload service
+      const uploadResult: UploadResponse = await uploadToNewService({
+        file: fileState.file,
+        kycCaseId: kycCaseId,
+        documentType: `aadhar_${type}`,
+        userId: '1'
+      });
+
+      if (uploadResult.success) {
+        console.log("Upload success:", uploadResult);
+        setUploadedFiles(prev => ({ ...prev, [type]: true }));
+        toast.success(`Aadhar ${type} image uploaded successfully using new service`);
+        
+        // Log additional details for debugging
+        if (uploadResult.documentId) {
+          console.log(`Document ID: ${uploadResult.documentId}`);
         }
-      );
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        const errorMessage = errorData.detail || `Failed to upload ${type} image`;
-        console.error("Upload error:", errorData);
-        throw new Error(errorMessage);
+        if (uploadResult.s3Url) {
+          console.log(`S3 URL: ${uploadResult.s3Url}`);
+        }
+        if (uploadResult.originalFilename) {
+          console.log(`Original filename: ${uploadResult.originalFilename}`);
+        }
+        if (uploadResult.fileSize) {
+          console.log(`File size: ${uploadResult.fileSize} bytes`);
+        }
+        
+        if (onFileUploaded) onFileUploaded(type === 'front' ? 'aadhar-front' : 'aadhar-back');
+      } else {
+        throw new Error(uploadResult.error || `Failed to upload ${type} image`);
       }
-
-      const result = await response.json();
-      console.log("Upload success:", result);
-
-      setUploadedFiles(prev => ({ ...prev, [type]: true }));
-      toast.success(`Aadhar ${type} image uploaded successfully`);
-      if (onFileUploaded) onFileUploaded(type === 'front' ? 'aadhar-front' : 'aadhar-back');
     } catch (error) {
       console.error(`Error uploading ${type} image:`, error);
       toast.error(error instanceof Error ? error.message : `Failed to upload ${type} image. Please try again.`);

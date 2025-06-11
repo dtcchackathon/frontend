@@ -33,6 +33,8 @@ import { PhotoSection } from '@/components/kyc/PhotoSection'
 import { SelfieSection } from '@/components/kyc/SelfieSection'
 import { VideoSection } from '@/components/kyc/VideoSection'
 import { StepLoader } from '@/components/ui/loader'
+import { useUploadService } from '@/hooks/useUploadService'
+import { UploadServiceSwitcher } from '@/components/UploadServiceSwitcher'
 
 const steps = [
   {
@@ -133,6 +135,17 @@ export default function SelfKycPage() {
   const [isProgressLoading, setIsProgressLoading] = useState(false)
   const [completedSteps, setCompletedSteps] = useState<string[]>([])
   const [kycSubmittedStatus, setKycSubmittedStatus] = useState<string>('pending')
+  
+  // Upload service hook
+  const { 
+    upload, 
+    isUploading, 
+    uploadProgress, 
+    lastUploadResult,
+    currentService,
+    isNewService 
+  } = useUploadService()
+  
   const [formData, setFormData] = useState<KycFormData>({
     // Auto-populated fields (will be filled from documents)
     name: '',
@@ -541,7 +554,7 @@ export default function SelfKycPage() {
           }))
 
           try {
-            // Read file as data URL
+            // Read file as data URL for preview
             const preview = await new Promise<string>((resolve, reject) => {
               const reader = new FileReader()
               reader.onload = () => resolve(reader.result as string)
@@ -549,53 +562,67 @@ export default function SelfKycPage() {
               reader.readAsDataURL(file)
             })
 
-            // Update with preview and success status
-            setAadharSides(prev => ({
-              ...prev,
-              [currentSide]: {
-                type: 'image',
-                file,
-                preview,
-                status: 'success',
-                error: undefined,
-                side: currentSide
-              }
-            }))
+            // Upload file using the upload service
+            const uploadResult = await upload({
+              file,
+              kycCaseId: kycCaseId?.toString() || '1',
+              documentType: `aadhar-${currentSide}`,
+              userId: '1'
+            })
 
-            // Update main uploads state for the side
-            setUploads(prev => ({
-              ...prev,
-              [`aadhar-${currentSide}`]: {
-                type: 'image',
-                file,
-                preview,
-                status: 'success',
-                error: undefined,
-                side: currentSide
-              },
-              // Optionally, keep the combined 'aadhar' status for compatibility
-              aadhar: {
-                ...prev.aadhar,
-                status: (currentSide === 'front'
-                  ? (aadharSides.back.status === 'success')
-                  : (aadharSides.front.status === 'success'))
-                  ? 'success'
-                  : 'pending',
-              }
-            }))
+            if (uploadResult.success) {
+              // Update with preview and success status
+              setAadharSides(prev => ({
+                ...prev,
+                [currentSide]: {
+                  type: 'image',
+                  file,
+                  preview,
+                  status: 'success',
+                  error: undefined,
+                  side: currentSide
+                }
+              }))
+
+              // Update main uploads state for the side
+              setUploads(prev => ({
+                ...prev,
+                [`aadhar-${currentSide}`]: {
+                  type: 'image',
+                  file,
+                  preview,
+                  status: 'success',
+                  error: undefined,
+                  side: currentSide
+                },
+                // Optionally, keep the combined 'aadhar' status for compatibility
+                aadhar: {
+                  ...prev.aadhar,
+                  status: (currentSide === 'front'
+                    ? (aadharSides.back.status === 'success')
+                    : (aadharSides.front.status === 'success'))
+                    ? 'success'
+                    : 'pending',
+                }
+              }))
+
+              console.log(`Aadhar ${currentSide} uploaded successfully:`, uploadResult)
+            } else {
+              throw new Error(uploadResult.error || 'Upload failed')
+            }
           } catch (error) {
-            console.error('Error processing file:', error)
+            console.error('Error uploading file:', error)
             setAadharSides(prev => ({
               ...prev,
               [currentSide]: {
                 ...prev[currentSide],
                 status: 'error',
-                error: 'Failed to process file. Please try again.'
+                error: error instanceof Error ? error.message : 'Failed to upload file. Please try again.'
               }
             }))
           }
         } else {
-          // Handle other document types as before
+          // Handle other document types
           setUploads(prev => ({
             ...prev,
             [currentDocType]: {
@@ -606,6 +633,7 @@ export default function SelfKycPage() {
           }))
 
           try {
+            // Read file as data URL for preview
             const preview = await new Promise<string>((resolve, reject) => {
               const reader = new FileReader()
               reader.onload = () => resolve(reader.result as string)
@@ -613,24 +641,38 @@ export default function SelfKycPage() {
               reader.readAsDataURL(file)
             })
 
-            setUploads(prev => ({
-              ...prev,
-              [currentDocType]: {
-                type: currentDocType === 'pancard' ? 'pdf' : 'image',
-                file,
-                preview,
-                status: 'success',
-                error: undefined
-              }
-            }))
+            // Upload file using the upload service
+            const uploadResult = await upload({
+              file,
+              kycCaseId: kycCaseId?.toString() || '1',
+              documentType: currentDocType,
+              userId: '1'
+            })
+
+            if (uploadResult.success) {
+              setUploads(prev => ({
+                ...prev,
+                [currentDocType]: {
+                  type: currentDocType === 'pancard' ? 'pdf' : 'image',
+                  file,
+                  preview,
+                  status: 'success',
+                  error: undefined
+                }
+              }))
+
+              console.log(`${currentDocType} uploaded successfully:`, uploadResult)
+            } else {
+              throw new Error(uploadResult.error || 'Upload failed')
+            }
           } catch (error) {
-            console.error('Error processing file:', error)
+            console.error('Error uploading file:', error)
             setUploads(prev => ({
               ...prev,
               [currentDocType]: {
                 ...prev[currentDocType],
                 status: 'error',
-                error: 'Failed to process file. Please try again.'
+                error: error instanceof Error ? error.message : 'Failed to upload file. Please try again.'
               }
             }))
           }
@@ -851,6 +893,34 @@ export default function SelfKycPage() {
           {/* Main Content */}
           <div className={`flex-1 ${isStepperVisible ? 'lg:mr-80' : ''} transition-all duration-300`}>
             <div className="mx-auto max-w-3xl py-8">
+              {/* Upload Service Status */}
+              <div className="mb-6">
+                <UploadServiceSwitcher showTesting={false} />
+              </div>
+
+              {/* Upload Progress */}
+              {isUploading && (
+                <div className="mb-6 bg-blue-50 border border-blue-200 rounded-lg p-4">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-sm font-medium text-blue-900">
+                      Uploading document...
+                    </span>
+                    <span className="text-sm text-blue-700">
+                      {Math.round(uploadProgress)}%
+                    </span>
+                  </div>
+                  <div className="w-full bg-blue-200 rounded-full h-2">
+                    <div 
+                      className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                      style={{ width: `${uploadProgress}%` }}
+                    />
+                  </div>
+                  <div className="mt-2 text-xs text-blue-600">
+                    Using {isNewService ? 'New Lambda Service' : 'Existing Service'}
+                  </div>
+                </div>
+              )}
+
               {currentStep === -1 ? (
                 <UserRegistration
                   onComplete={handleRegistrationComplete}

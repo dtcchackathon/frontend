@@ -40,6 +40,8 @@ import { VideoSection } from '@/components/kyc/VideoSection'
 import { MediaRecorderComponent } from '@/components/kyc/MediaRecorderComponent'
 import { RiskAnalysisSection } from '@/components/kyc/RiskAnalysisSection'
 import { StepLoader, ReviewLoader } from '@/components/ui/loader'
+import { useUploadService } from '@/hooks/useUploadService'
+import { UploadServiceSwitcher } from '@/components/UploadServiceSwitcher'
 
 type StepId = "registration" | "aadhar" | "pancard" | "passport" | "photo" | "selfie" | "video" | "review" | "kyc_submitted"
 
@@ -215,6 +217,17 @@ const backendToFrontendStep: Record<string, StepId> = {
 export default function SelfKycPage() {
   const [currentStep, setCurrentStep] = useState<StepId>('registration')
   const [showReview, setShowReview] = useState(false)
+  
+  // Upload service hook
+  const { 
+    upload, 
+    isUploading, 
+    uploadProgress, 
+    lastUploadResult,
+    currentService,
+    isNewService 
+  } = useUploadService()
+  
   const [formData, setFormData] = useState<KycFormData>({
     // Auto-populated fields (will be filled from documents)
     name: '',
@@ -317,6 +330,13 @@ export default function SelfKycPage() {
   const [completedSteps, setCompletedSteps] = useState<StepId[]>([])
   const [isProgressLoading, setIsProgressLoading] = useState(false)
   const [isScreenDataLoading, setIsScreenDataLoading] = useState(false)
+  const [isMobileStepperOpen, setIsMobileStepperOpen] = useState(false)
+  const [isStepperVisible, setIsStepperVisible] = useState(true)
+  const [showConfirmDialog, setShowConfirmDialog] = useState(false)
+  const [showSuccessModal, setShowSuccessModal] = useState(false)
+  const [kycDetails, setKycDetails] = useState<any>(null)
+  const [backendScreenData, setBackendScreenData] = useState<BackendScreenData | null>(null)
+  const [kycSubmittedStatus, setKycSubmittedStatus] = useState<string>('pending')
 
   // Camera related states
   const [cameraMode, setCameraMode] = useState<CameraMode>(null)
@@ -406,11 +426,7 @@ export default function SelfKycPage() {
     handleNext()
   }
 
-  const [showConfirmDialog, setShowConfirmDialog] = useState(false);
   const [pendingReviewData, setPendingReviewData] = useState<ReviewFormData | null>(null);
-  const [showSuccessModal, setShowSuccessModal] = useState(false);
-  const [kycDetails, setKycDetails] = useState<any>(null);
-  const [backendScreenData, setBackendScreenData] = useState<BackendScreenData | null>(null);
 
   const handleOpenConfirm = (reviewData: ReviewFormData) => {
     setPendingReviewData(reviewData);
@@ -515,9 +531,6 @@ export default function SelfKycPage() {
     }
     return null;
   }
-
-  const [isStepperVisible, setIsStepperVisible] = useState(true)
-  const [isMobileStepperOpen, setIsMobileStepperOpen] = useState(false)
 
   const handleRegistrationComplete = async (data: UserRegistrationData) => {
     try {
@@ -867,6 +880,34 @@ export default function SelfKycPage() {
           {/* Main Content */}
           <div className={`flex-1 ${isStepperVisible ? 'lg:mr-80' : ''} transition-all duration-300`}>
             <div className="mx-auto max-w-3xl py-8">
+              {/* Upload Service Status */}
+              <div className="mb-6">
+                <UploadServiceSwitcher showTesting={false} />
+              </div>
+
+              {/* Upload Progress */}
+              {isUploading && (
+                <div className="mb-6 bg-blue-50 border border-blue-200 rounded-lg p-4">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-sm font-medium text-blue-900">
+                      Uploading document...
+                    </span>
+                    <span className="text-sm text-blue-700">
+                      {Math.round(uploadProgress)}%
+                    </span>
+                  </div>
+                  <div className="w-full bg-blue-200 rounded-full h-2">
+                    <div 
+                      className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                      style={{ width: `${uploadProgress}%` }}
+                    />
+                  </div>
+                  <div className="mt-2 text-xs text-blue-600">
+                    Using {isNewService ? 'New Lambda Service' : 'Existing Service'}
+                  </div>
+                </div>
+              )}
+
               {renderStep()}
             </div>
           </div>
