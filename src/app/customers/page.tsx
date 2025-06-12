@@ -36,8 +36,8 @@ export default function CustomersPage() {
       
       // Transform API response to Customer type
       const transformedCustomers: Customer[] = data.map(customer => ({
-        id: customer.kyc_details_id.toString(),
-        kycCaseId: customer.kyc_case_id.toString(),
+        id: customer.kyc_details_id?.toString() || 'N/A',
+        kycCaseId: customer.kyc_case_id?.toString() || 'N/A',
         name: customer.name || 'N/A',
         email: customer.email || 'N/A'
       }))
@@ -45,7 +45,7 @@ export default function CustomersPage() {
       // Create status mapping
       const statusMapping: Record<string, string> = {}
       data.forEach(customer => {
-        if (customer.status) {
+        if (customer.status && customer.kyc_details_id) {
           statusMapping[customer.kyc_details_id.toString()] = customer.status
         }
       })
