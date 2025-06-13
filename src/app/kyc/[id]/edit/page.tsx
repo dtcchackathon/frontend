@@ -162,6 +162,8 @@ export default function EditKycForm() {
   const [error, setError] = useState<string | null>(null)
   const [screenData, setScreenData] = useState<BackendScreenData | null>(null)
   const [resolvedUrls, setResolvedUrls] = useState<Record<string, string>>({})
+  const [deletingDocuments, setDeletingDocuments] = useState<Set<string>>(new Set())
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState<{ show: boolean; docType: string | null }>({ show: false, docType: null })
 
   // Form state
   const [formData, setFormData] = useState<FormData>({
@@ -187,6 +189,99 @@ export default function EditKycForm() {
     nominee_relation: '',
     nominee_contact: ''
   })
+
+  // Add delete document function
+  const handleDeleteDocument = async (docType: string) => {
+    setShowDeleteConfirm({ show: true, docType });
+  };
+
+  const confirmDelete = async () => {
+    const docType = showDeleteConfirm.docType;
+    if (!docType) return;
+
+    try {
+      setDeletingDocuments(prev => new Set(prev).add(docType));
+      setShowDeleteConfirm({ show: false, docType: null });
+      
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+      const response = await fetch(`${apiUrl}/kyc/delete-document`, {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          kyc_case_id: parseInt(kycId),
+          doc_type: docType
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.detail || 'Failed to delete document');
+      }
+
+      toast.success(`${docType.replace('_', ' ')} document deleted successfully`);
+      
+      // Refresh the screen data to update the documents list
+      const fetchScreenData = async () => {
+        try {
+          setIsLoading(true);
+          setError(null);
+          const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+          console.log('Fetching screen data for KYC case:', kycId);
+          const response = await fetch(`${apiUrl}/kyc/screen-data/${kycId}`);
+          
+          if (!response.ok) {
+            throw new Error('Failed to fetch screen data');
+          }
+          
+          const data = await response.json();
+          console.log('Screen data received:', data);
+          setScreenData(data);
+          
+          // Resolve S3 URLs for documents
+          const urlPromises = data.documents.map(async (doc: any) => {
+            if (doc.file_path.startsWith('s3://')) {
+              try {
+                const presignedUrl = await getS3PresignedUrl(doc.file_path);
+                return { [doc.file_path]: presignedUrl };
+              } catch (error) {
+                console.error('Error getting presigned URL for:', doc.file_path, error);
+                return { [doc.file_path]: doc.file_path };
+              }
+            }
+            return { [doc.file_path]: getDocumentUrl(doc.file_path) };
+          });
+          
+          const resolvedUrls = await Promise.all(urlPromises);
+          const urlMap = resolvedUrls.reduce((acc, curr) => ({ ...acc, ...curr }), {});
+          setResolvedUrls(urlMap);
+          
+        } catch (error) {
+          console.error('Error fetching screen data:', error);
+          setError(error instanceof Error ? error.message : 'Failed to fetch screen data');
+        } finally {
+          setIsLoading(false);
+        }
+      };
+      
+      fetchScreenData();
+      
+    } catch (error) {
+      console.error('Error deleting document:', error);
+      toast.error(error instanceof Error ? error.message : 'Failed to delete document');
+    } finally {
+      setDeletingDocuments(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(docType);
+        return newSet;
+      });
+    }
+  };
+
+  const cancelDelete = () => {
+    setShowDeleteConfirm({ show: false, docType: null });
+  };
 
   // Fetch KYC screen data
   useEffect(() => {
@@ -637,12 +732,31 @@ export default function EditKycForm() {
                         )}
                       </div>
                       <div className="mt-4">
-                        <h4 className="text-sm font-medium text-gray-900">
-                          {doc.doc_type.split('_').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ')}
-                        </h4>
-                        <p className="mt-1 text-xs text-gray-500">
-                          Uploaded on {new Date(doc.uploaded_at).toLocaleDateString()}
-                        </p>
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <h4 className="text-sm font-medium text-gray-900">
+                              {doc.doc_type.split('_').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ')}
+                            </h4>
+                            <p className="mt-1 text-xs text-gray-500">
+                              Uploaded on {new Date(doc.uploaded_at).toLocaleDateString()}
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteDocument(doc.doc_type)}
+                            disabled={deletingDocuments.has(doc.doc_type)}
+                            className="inline-flex items-center px-2.5 py-1.5 border border-transparent text-xs font-medium rounded text-red-700 bg-red-100 hover:bg-red-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            {deletingDocuments.has(doc.doc_type) ? (
+                              <>
+                                <ArrowPathIcon className="animate-spin -ml-1 mr-1 h-3 w-3" />
+                                Deleting...
+                              </>
+                            ) : (
+                              'Delete'
+                            )}
+                          </button>
+                        </div>
                       </div>
                     </div>
                   ))}
@@ -993,6 +1107,57 @@ export default function EditKycForm() {
           </div>
         </div>
       </main>
+
+      {/* Delete Confirmation Dialog */}
+      {showDeleteConfirm.show && showDeleteConfirm.docType && (
+        <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
+          <div className="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white">
+            <div className="mt-3 text-center">
+              <div className="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-red-100">
+                <ExclamationTriangleIcon className="h-6 w-6 text-red-600" />
+              </div>
+              <h3 className="text-lg leading-6 font-medium text-gray-900 mt-4">
+                Delete Document
+              </h3>
+              <div className="mt-2 px-7 py-3">
+                <p className="text-sm text-gray-500">
+                  Are you sure you want to delete the{' '}
+                  <span className="font-medium text-gray-900">
+                    {showDeleteConfirm.docType.replace('_', ' ')}
+                  </span>{' '}
+                  document? This action cannot be undone.
+                </p>
+              </div>
+              <div className="items-center px-4 py-3">
+                <div className="flex justify-center space-x-3">
+                  <button
+                    type="button"
+                    onClick={cancelDelete}
+                    className="px-4 py-2 bg-gray-300 text-gray-700 text-base font-medium rounded-md w-24 shadow-sm hover:bg-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-300"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={confirmDelete}
+                    disabled={deletingDocuments.has(showDeleteConfirm.docType!)}
+                    className="px-4 py-2 bg-red-600 text-white text-base font-medium rounded-md w-24 shadow-sm hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {deletingDocuments.has(showDeleteConfirm.docType!) ? (
+                      <>
+                        <ArrowPathIcon className="animate-spin inline h-4 w-4 mr-1" />
+                        Deleting...
+                      </>
+                    ) : (
+                      'Delete'
+                    )}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 } 
