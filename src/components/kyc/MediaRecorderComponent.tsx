@@ -1,6 +1,7 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { toast } from 'react-hot-toast';
+import React, { useRef, useState, useEffect } from 'react';
 import { VideoCameraIcon, StopIcon, ArrowPathIcon, ArrowUpTrayIcon } from '@heroicons/react/24/outline';
+import { toast } from 'sonner';
+import { useUploadService } from '@/hooks/useUploadService';
 
 interface MediaRecorderComponentProps {
   onRecordingComplete: (file: File) => void;
@@ -21,72 +22,55 @@ export const MediaRecorderComponent: React.FC<MediaRecorderComponentProps> = ({
   minDuration = 5,
   kycCaseId
 }) => {
-  const [isUploading, setIsUploading] = useState(false);
-  const [recordingTime, setRecordingTime] = useState(0);
-  const [isRecording, setIsRecording] = useState(false);
-  const [mediaStream, setMediaStream] = useState<MediaStream | null>(null);
-  const [isVideoValid, setIsVideoValid] = useState(false);
-  const [isTestingPlayback, setIsTestingPlayback] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [status, setStatus] = useState<'idle' | 'recording' | 'stopped'>('idle');
-  const [recordedFile, setRecordedFile] = useState<File | null>(null);
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-
   const videoRef = useRef<HTMLVideoElement>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const timerRef = useRef<NodeJS.Timeout | null>(null);
+  const [mediaStream, setMediaStream] = useState<MediaStream | null>(null);
+  const [isRecording, setIsRecording] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
+  const [isTestingPlayback, setIsTestingPlayback] = useState(false);
+  const [recordedFile, setRecordedFile] = useState<File | null>(null);
+  const [recordingTime, setRecordingTime] = useState(0);
+  const [status, setStatus] = useState<'idle' | 'recording' | 'stopped'>('idle');
+  const [error, setError] = useState<string | null>(null);
+  const [timerInterval, setTimerInterval] = useState<NodeJS.Timeout | null>(null);
 
-  // Cleanup function for preview URLs
+  // Upload service hook
+  const { 
+    upload, 
+    isUploading: serviceUploading, 
+    uploadProgress, 
+    lastUploadResult,
+    currentService,
+    isNewService 
+  } = useUploadService();
+
   const cleanupPreviewUrl = () => {
-    if (previewUrl) {
-      URL.revokeObjectURL(previewUrl);
-      setPreviewUrl(null);
+    if (videoRef.current && videoRef.current.src) {
+      URL.revokeObjectURL(videoRef.current.src);
+      videoRef.current.src = '';
     }
   };
 
-  // Function to start the recording timer
-  const startTimer = useCallback(() => {
-    console.log('Starting timer...');
-    // Clear any existing timer
-    if (timerRef.current) {
-      clearInterval(timerRef.current);
-    }
-    // Reset recording time
-    setRecordingTime(0);
-    // Start new timer
-    timerRef.current = setInterval(() => {
+  const startTimer = () => {
+    const interval = setInterval(() => {
       setRecordingTime(prev => {
-        const newTime = prev + 1;
-        console.log('Timer tick:', newTime);
-        if (newTime >= maxDuration) {
-          console.log('Max duration reached, stopping recording');
+        if (prev >= maxDuration) {
           handleStopRecording();
           return prev;
         }
-        return newTime;
+        return prev + 1;
       });
     }, 1000);
-  }, [maxDuration]);
+    setTimerInterval(interval);
+  };
 
-  // Function to stop the timer
-  const stopTimer = useCallback(() => {
-    console.log('Stopping timer...');
-    if (timerRef.current) {
-      clearInterval(timerRef.current);
-      timerRef.current = null;
+  const stopTimer = () => {
+    if (timerInterval) {
+      clearInterval(timerInterval);
+      setTimerInterval(null);
     }
-  }, []);
+  };
 
-  // Cleanup timer on unmount
-  useEffect(() => {
-    return () => {
-      if (timerRef.current) {
-        clearInterval(timerRef.current);
-      }
-    };
-  }, []);
-
-  // Function to test video playback
   const testVideoPlayback = async (file: File): Promise<void> => {
     return new Promise((resolve, reject) => {
       if (!videoRef.current) {
@@ -94,161 +78,121 @@ export const MediaRecorderComponent: React.FC<MediaRecorderComponentProps> = ({
         return;
       }
 
-      setIsTestingPlayback(true);
       const video = videoRef.current;
-      const url = URL.createObjectURL(file);
+      let hasPlayed = false;
+      let hasError = false;
 
-      const handleError = (e: Event) => {
-        URL.revokeObjectURL(url);
+      const cleanup = () => {
+        video.removeEventListener('play', handlePlay);
         video.removeEventListener('error', handleError);
         video.removeEventListener('timeupdate', handleTimeUpdate);
-        video.removeEventListener('canplaythrough', handleCanPlay);
-        setIsTestingPlayback(false);
-        reject(new Error('Video playback test failed'));
+        URL.revokeObjectURL(video.src);
+      };
+
+      const handlePlay = () => {
+        hasPlayed = true;
+      };
+
+      const handleError = (e: Event) => {
+        hasError = true;
+        cleanup();
+        reject(new Error('Video playback error'));
       };
 
       const handleTimeUpdate = () => {
         if (video.currentTime >= 1) {
-          URL.revokeObjectURL(url);
-          video.removeEventListener('error', handleError);
-          video.removeEventListener('timeupdate', handleTimeUpdate);
-          video.removeEventListener('canplaythrough', handleCanPlay);
-          video.pause();
-          video.src = '';
-          setIsTestingPlayback(false);
+          cleanup();
           resolve();
         }
       };
 
-      const handleCanPlay = () => {
-        video.play().catch(handleError);
-      };
-
+      video.addEventListener('play', handlePlay);
       video.addEventListener('error', handleError);
       video.addEventListener('timeupdate', handleTimeUpdate);
-      video.addEventListener('canplaythrough', handleCanPlay);
+
+      const url = URL.createObjectURL(file);
       video.src = url;
+      video.controls = true;
+
+      setTimeout(() => {
+        if (!hasPlayed || hasError) {
+          cleanup();
+          reject(new Error('Video playback timeout'));
+        }
+      }, 5000);
     });
   };
 
-  // Function to get supported mime type
   const getSupportedMimeType = () => {
-    console.log('Checking supported MIME types...');
-    const types = [
-      'video/webm',
-      'video/mp4',
+    const mimeTypes = [
+      'video/webm;codecs=vp9,opus',
       'video/webm;codecs=vp8,opus',
-      'video/webm;codecs=h264,opus',
-      'video/mp4;codecs=h264,aac'
+      'video/webm',
+      'video/mp4'
     ];
 
-    for (const type of types) {
-      if (MediaRecorder.isTypeSupported(type)) {
-        console.log('Found supported MIME type:', type);
-        return type;
+    for (const mimeType of mimeTypes) {
+      if (MediaRecorder.isTypeSupported(mimeType)) {
+        return mimeType;
       }
     }
-    console.log('No specific MIME type supported, using default webm');
+
     return 'video/webm';
   };
 
-  // Function to start recording
   const handleStartRecording = async () => {
-    console.log('Starting recording...');
-    if (status !== 'idle') {
-      console.log('Cannot start recording: not in idle state');
-      return;
-    }
-
     try {
-      // Reset states
-      cleanupPreviewUrl();
-      setRecordedFile(null);
+      console.log('Starting recording...');
       setError(null);
+      setStatus('recording');
       setRecordingTime(0);
 
-      console.log('Requesting media permissions...');
       const stream = await navigator.mediaDevices.getUserMedia({
         video: true,
         audio: true
       });
-      console.log('Media permissions granted');
-
-      // Set up video preview
-      if (videoRef.current) {
-        console.log('Setting up video preview');
-        videoRef.current.srcObject = stream;
-        try {
-          await videoRef.current.play();
-          console.log('Video preview started');
-        } catch (e) {
-          console.error('Error playing video preview:', e);
-        }
-      }
 
       setMediaStream(stream);
 
-      // Create MediaRecorder
-      const mimeType = getSupportedMimeType();
-      console.log('Creating MediaRecorder with type:', mimeType);
-      
-      const mediaRecorder = new MediaRecorder(stream, {
-        mimeType,
-        videoBitsPerSecond: 2500000
-      });
-      console.log('MediaRecorder created successfully');
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+      }
 
+      const mimeType = getSupportedMimeType();
+      console.log('Using MIME type:', mimeType);
+
+      const mediaRecorder = new MediaRecorder(stream, { mimeType });
       const chunks: Blob[] = [];
-      
-      mediaRecorder.ondataavailable = (e) => {
-        console.log('Data available:', e.data.size, 'bytes');
-        if (e.data.size > 0) {
-          chunks.push(e.data);
+
+      mediaRecorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          chunks.push(event.data);
         }
       };
 
       mediaRecorder.onstop = async () => {
-        console.log('Recording stopped, processing chunks...');
-        // Stop the timer first
-        stopTimer();
-        
+        console.log('Recording stopped, processing...');
+        const blob = new Blob(chunks, { type: mimeType });
+        const file = new File([blob], 'verification.mp4', { type: mimeType });
+
+        setRecordedFile(file);
+        setStatus('stopped');
+
+        // Test playback
+        setIsTestingPlayback(true);
         try {
-          const blob = new Blob(chunks, { type: mimeType });
-          console.log('Created blob:', blob.size, 'bytes');
-          
-          const file = new File([blob], `video.${mimeType.split('/')[1].split(';')[0]}`, {
-            type: mimeType
-          });
-          console.log('Created file:', file.name, file.size, 'bytes');
-
-          // Update state and UI
-          setRecordedFile(file);
-          const url = URL.createObjectURL(file);
-          setPreviewUrl(url);
-          
-          if (videoRef.current) {
-            videoRef.current.srcObject = null;
-            videoRef.current.src = url;
-            videoRef.current.controls = true;
-            try {
-              await videoRef.current.play();
-              console.log('Preview playback started');
-            } catch (e) {
-              console.error('Error playing preview:', e);
-            }
-          }
-
+          await testVideoPlayback(file);
+          console.log('Video playback test passed');
           onRecordingComplete(file);
-          setStatus('stopped');
-          console.log('Recording processing complete');
         } catch (error) {
-          console.error('Error processing recording:', error);
-          onError(error instanceof Error ? error.message : 'Failed to process recording');
+          console.error('Video playback test failed:', error);
+          setError('Video playback test failed. Please try recording again.');
           setStatus('idle');
+        } finally {
+          setIsTestingPlayback(false);
         }
       };
 
-      // Start recording
       console.log('Starting MediaRecorder...');
       mediaRecorderRef.current = mediaRecorder;
       mediaRecorder.start(100);
@@ -326,28 +270,42 @@ export const MediaRecorderComponent: React.FC<MediaRecorderComponentProps> = ({
 
   // Function to handle upload
   const handleUpload = async () => {
-    if (!uploadUrl || !recordedFile) return;
+    if (!recordedFile) return;
 
     setIsUploading(true);
-    const formData = new FormData();
-    formData.append('file', recordedFile);
-    formData.append('doc_type', 'video');
-    formData.append('kyc_case_id', kycCaseId);
-
+    
     try {
-      const response = await fetch(uploadUrl, {
-        method: 'POST',
-        body: formData,
+      // Use the new upload service with proper payload structure
+      const uploadResult = await upload({
+        file: recordedFile,
+        kycCaseId: kycCaseId,
+        documentType: "video",
+        userId: '1'
       });
 
-      if (!response.ok) {
-        throw new Error('Upload failed');
-      }
-
-      const result = await response.json();
-      console.log('Upload successful:', result);
-      if (onUploadComplete) {
-        onUploadComplete();
+      if (uploadResult.success) {
+        console.log('Upload successful:', uploadResult);
+        toast.success(`Video uploaded successfully using ${isNewService ? 'Lambda service' : 'existing service'}`);
+        
+        // Log additional details for debugging
+        if (uploadResult.documentId) {
+          console.log(`Document ID: ${uploadResult.documentId}`);
+        }
+        if (uploadResult.s3Url) {
+          console.log(`S3 URL: ${uploadResult.s3Url}`);
+        }
+        if (uploadResult.originalFilename) {
+          console.log(`Original filename: ${uploadResult.originalFilename}`);
+        }
+        if (uploadResult.fileSize) {
+          console.log(`File size: ${uploadResult.fileSize} bytes`);
+        }
+        
+        if (onUploadComplete) {
+          onUploadComplete();
+        }
+      } else {
+        throw new Error(uploadResult.error || 'Upload failed');
       }
     } catch (error) {
       console.error('Upload error:', error);
@@ -365,6 +323,31 @@ export const MediaRecorderComponent: React.FC<MediaRecorderComponentProps> = ({
 
   return (
     <div className="space-y-4">
+      {/* Upload Service Status */}
+      <div className="text-xs text-gray-500 bg-gray-50 p-2 rounded">
+        Using: {isNewService ? 'New Lambda Service' : 'Existing Service'}
+      </div>
+      
+      {/* Upload Progress */}
+      {serviceUploading && (
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-sm font-medium text-blue-900">
+              Uploading video...
+            </span>
+            <span className="text-sm text-blue-700">
+              {Math.round(uploadProgress)}%
+            </span>
+          </div>
+          <div className="w-full bg-blue-200 rounded-full h-2">
+            <div 
+              className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+              style={{ width: `${uploadProgress}%` }}
+            />
+          </div>
+        </div>
+      )}
+
       <div className="relative aspect-video w-full overflow-hidden rounded-lg bg-black">
         <video
           ref={videoRef}
@@ -416,16 +399,14 @@ export const MediaRecorderComponent: React.FC<MediaRecorderComponentProps> = ({
               <ArrowPathIcon className="h-6 w-6" />
               Retake
             </button>
-            {uploadUrl && (
-              <button
-                onClick={handleUpload}
-                disabled={isUploading}
-                className="flex items-center gap-2 rounded-full bg-green-600 px-6 py-3 text-white hover:bg-green-700 disabled:bg-gray-400"
-              >
-                <ArrowUpTrayIcon className="h-6 w-6" />
-                {isUploading ? 'Uploading...' : 'Upload'}
-              </button>
-            )}
+            <button
+              onClick={handleUpload}
+              disabled={isUploading}
+              className="flex items-center gap-2 rounded-full bg-green-600 px-6 py-3 text-white hover:bg-green-700 disabled:bg-gray-400"
+            >
+              <ArrowUpTrayIcon className="h-6 w-6" />
+              {isUploading ? 'Uploading...' : 'Upload'}
+            </button>
           </div>
         )}
       </div>
@@ -433,6 +414,24 @@ export const MediaRecorderComponent: React.FC<MediaRecorderComponentProps> = ({
       {error && (
         <div className="rounded-md bg-red-50 p-4 text-sm text-red-700">
           {error}
+        </div>
+      )}
+
+      {/* Upload Details */}
+      {lastUploadResult && (
+        <div className="mt-4 p-3 bg-gray-50 rounded text-xs">
+          <div className="font-medium mb-1">Upload Details:</div>
+          <div>Service: {isNewService ? 'Lambda' : 'Existing'}</div>
+          <div>Document ID: {lastUploadResult.documentId}</div>
+          {lastUploadResult.s3Url && (
+            <div className="truncate">S3 URL: {lastUploadResult.s3Url}</div>
+          )}
+          {lastUploadResult.originalFilename && (
+            <div>File: {lastUploadResult.originalFilename}</div>
+          )}
+          {lastUploadResult.fileSize && (
+            <div>Size: {(lastUploadResult.fileSize / 1024 / 1024).toFixed(2)} MB</div>
+          )}
         </div>
       )}
 

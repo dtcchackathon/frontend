@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { toast } from "sonner";
 import { Loader2, Camera, RefreshCw, Upload } from "lucide-react";
+import { useUploadService } from "@/hooks/useUploadService";
 
 interface SelfieSectionProps {
   kycCaseId: string;
@@ -20,6 +21,16 @@ export function SelfieSection({ kycCaseId, onComplete, onFileUploaded }: SelfieS
   const [uploading, setUploading] = useState(false);
   const [uploaded, setUploaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Upload service hook
+  const { 
+    upload, 
+    isUploading, 
+    uploadProgress, 
+    lastUploadResult,
+    currentService,
+    isNewService 
+  } = useUploadService();
 
   useEffect(() => {
     if (!captured) {
@@ -78,33 +89,37 @@ export function SelfieSection({ kycCaseId, onComplete, onFileUploaded }: SelfieS
       const res = await fetch(captured);
       const blob = await res.blob();
       const file = new File([blob], "selfie.jpg", { type: "image/jpeg" });
-      const formData = new FormData();
-      formData.append("file", file);
-      formData.append("doc_type", "selfie");
-      const caseId = parseInt(kycCaseId, 10);
-      if (isNaN(caseId)) {
-        toast.error("Invalid KYC case ID");
-        setUploading(false);
-        return;
-      }
-      formData.append("kyc_case_id", caseId.toString());
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
-      const response = await fetch(`${apiUrl}/kyc/upload`, {
-        method: "POST",
-        body: formData,
-        headers: {
-          Accept: "application/json",
-        },
+
+      // Use the new upload service with proper payload structure
+      const uploadResult = await upload({
+        file,
+        kycCaseId: kycCaseId,
+        documentType: "photo", // Using "photo" as doctype as per working example
+        userId: '1'
       });
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        const errorMessage = errorData.detail || "Failed to upload selfie";
-        setError(errorMessage);
-        throw new Error(errorMessage);
+
+      if (uploadResult.success) {
+        setUploaded(true);
+        if (onFileUploaded) onFileUploaded('selfie');
+        toast.success(`Selfie uploaded successfully using ${isNewService ? 'Lambda service' : 'existing service'}`);
+        console.log("Selfie upload result:", uploadResult);
+        
+        // Log additional details for debugging
+        if (uploadResult.documentId) {
+          console.log(`Document ID: ${uploadResult.documentId}`);
+        }
+        if (uploadResult.s3Url) {
+          console.log(`S3 URL: ${uploadResult.s3Url}`);
+        }
+        if (uploadResult.originalFilename) {
+          console.log(`Original filename: ${uploadResult.originalFilename}`);
+        }
+        if (uploadResult.fileSize) {
+          console.log(`File size: ${uploadResult.fileSize} bytes`);
+        }
+      } else {
+        throw new Error(uploadResult.error || "Failed to upload selfie");
       }
-      setUploaded(true);
-      if (onFileUploaded) onFileUploaded('selfie');
-      toast.success("Selfie uploaded successfully");
     } catch (err: any) {
       setError(err.message || "Failed to upload selfie");
       toast.error(err.message || "Failed to upload selfie. Please try again.");
@@ -126,6 +141,32 @@ export function SelfieSection({ kycCaseId, onComplete, onFileUploaded }: SelfieS
       <Card className="p-6">
         <div className="space-y-4">
           <h3 className="text-lg font-semibold">Selfie Capture</h3>
+          
+          {/* Upload Service Status */}
+          <div className="text-xs text-gray-500 bg-gray-50 p-2 rounded">
+            Using: {isNewService ? 'New Lambda Service' : 'Existing Service'}
+          </div>
+          
+          {/* Upload Progress */}
+          {isUploading && (
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-sm font-medium text-blue-900">
+                  Uploading selfie...
+                </span>
+                <span className="text-sm text-blue-700">
+                  {Math.round(uploadProgress)}%
+                </span>
+              </div>
+              <div className="w-full bg-blue-200 rounded-full h-2">
+                <div 
+                  className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                  style={{ width: `${uploadProgress}%` }}
+                />
+              </div>
+            </div>
+          )}
+
           {!captured ? (
             <div className="flex flex-col items-center gap-4">
               {error && <p className="text-red-600 text-sm">{error}</p>}
@@ -169,6 +210,25 @@ export function SelfieSection({ kycCaseId, onComplete, onFileUploaded }: SelfieS
               {error && <p className="text-red-600 text-sm">{error}</p>}
             </div>
           )}
+          
+          {/* Upload Details */}
+          {lastUploadResult && (
+            <div className="mt-4 p-3 bg-gray-50 rounded text-xs">
+              <div className="font-medium mb-1">Upload Details:</div>
+              <div>Service: {isNewService ? 'Lambda' : 'Existing'}</div>
+              <div>Document ID: {lastUploadResult.documentId}</div>
+              {lastUploadResult.s3Url && (
+                <div className="truncate">S3 URL: {lastUploadResult.s3Url}</div>
+              )}
+              {lastUploadResult.originalFilename && (
+                <div>File: {lastUploadResult.originalFilename}</div>
+              )}
+              {lastUploadResult.fileSize && (
+                <div>Size: {(lastUploadResult.fileSize / 1024 / 1024).toFixed(2)} MB</div>
+              )}
+            </div>
+          )}
+          
           <canvas ref={canvasRef} style={{ display: "none" }} />
         </div>
       </Card>

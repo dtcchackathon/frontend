@@ -6,12 +6,16 @@ import { Card } from "@/components/ui/card";
 import { toast } from "sonner";
 import { Loader2, Video, RefreshCw, Upload, Play, StopCircle } from "lucide-react";
 import { ArrowPathIcon, ArrowUpTrayIcon } from "@heroicons/react/24/outline";
+import { useUploadService } from "@/hooks/useUploadService";
 
 interface VideoSectionProps {
   kycCaseId: string;
   onComplete: () => void;
   onFileUploaded?: (type: string) => void;
 }
+
+const MIN_DURATION = 5;
+const MAX_DURATION = 10;
 
 export function VideoSection({ kycCaseId, onComplete, onFileUploaded }: VideoSectionProps) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -29,8 +33,15 @@ export function VideoSection({ kycCaseId, onComplete, onFileUploaded }: VideoSec
   const [isVideoValid, setIsVideoValid] = useState(false);
   const [isTestingPlayback, setIsTestingPlayback] = useState(false);
 
-  const MIN_DURATION = 5; // seconds
-  const MAX_DURATION = 10; // seconds
+  // Upload service hook
+  const { 
+    upload, 
+    isUploading, 
+    uploadProgress, 
+    lastUploadResult,
+    currentService,
+    isNewService 
+  } = useUploadService();
 
   const startCamera = async () => {
     setError(null);
@@ -56,334 +67,147 @@ export function VideoSection({ kycCaseId, onComplete, onFileUploaded }: VideoSec
     return new Promise((resolve) => {
       const video = document.createElement('video');
       video.preload = 'metadata';
-      let blobUrl: string | null = null;
       
       const cleanup = () => {
-        if (blobUrl) {
-          URL.revokeObjectURL(blobUrl);
-          blobUrl = null;
-        }
+        URL.revokeObjectURL(video.src);
       };
-      
+
       video.onloadedmetadata = () => {
-        try {
-          // Check if video has valid duration
-          if (video.duration < MIN_DURATION) {
-            cleanup();
-            resolve({ isValid: false, error: `Video is too short. Minimum duration is ${MIN_DURATION} seconds.` });
-            return;
-          }
-          if (video.duration > MAX_DURATION) {
-            cleanup();
-            resolve({ isValid: false, error: `Video is too long. Maximum duration is ${MAX_DURATION} seconds.` });
-            return;
-          }
-          
-          // Check if video has video track
-          const hasVideoTrack = video.videoWidth > 0 && video.videoHeight > 0;
-          if (!hasVideoTrack) {
-            cleanup();
-            resolve({ isValid: false, error: 'No video track detected. Please ensure your camera is working.' });
-            return;
-          }
-          
-          // Check for audio track - more lenient check
-          const hasAudioTrack = 'audioTracks' in video && 
-            typeof (video as any).audioTracks === 'object' && 
-            (video as any).audioTracks.length > 0;
-          
-          if (!hasAudioTrack) {
-            cleanup();
-            resolve({ isValid: false, error: 'No audio track detected. Please ensure your microphone is enabled and working.' });
-            return;
-          }
-          
+        const duration = video.duration;
+        if (duration < MIN_DURATION) {
+          cleanup();
+          resolve({ isValid: false, error: `Video must be at least ${MIN_DURATION} seconds long` });
+        } else if (duration > MAX_DURATION) {
+          cleanup();
+          resolve({ isValid: false, error: `Video must be no longer than ${MAX_DURATION} seconds` });
+        } else {
           cleanup();
           resolve({ isValid: true });
-        } catch (error) {
-          console.error('Error in video validation:', error);
-          cleanup();
-          resolve({ isValid: false, error: 'Error validating video. Please try recording again.' });
         }
       };
-      
-      video.onerror = (e) => {
-        console.error('Video validation error:', e);
+
+      video.onerror = () => {
         cleanup();
-        resolve({ isValid: false, error: 'Failed to load video for validation. Please try recording again.' });
+        resolve({ isValid: false, error: 'Invalid video file' });
       };
-      
-      try {
-        blobUrl = URL.createObjectURL(blob);
-        video.src = blobUrl;
-      } catch (error) {
-        console.error('Error creating blob URL:', error);
-        cleanup();
-        resolve({ isValid: false, error: 'Error processing video. Please try recording again.' });
-      }
+
+      video.src = URL.createObjectURL(blob);
     });
   };
 
   const testVideoPlayback = async (blob: Blob): Promise<{ canPlay: boolean; error?: string }> => {
     return new Promise((resolve) => {
-      if (!previewVideoRef.current) {
-        resolve({ canPlay: false, error: 'Video preview element not found.' });
-        return;
-      }
-
-      const video = previewVideoRef.current;
-      let hasPlayed = false;
-      let hasError = false;
-      let errorMessage = '';
-      let blobUrl: string | null = null;
-
+      const video = document.createElement('video');
+      video.preload = 'metadata';
+      
       const cleanup = () => {
-        if (blobUrl) {
-          try {
-            URL.revokeObjectURL(blobUrl);
-          } catch (e) {
-            console.error('Error revoking blob URL:', e);
-          }
-          blobUrl = null;
-        }
-        // Reset video element
-        video.removeAttribute('src');
-        video.load();
+        URL.revokeObjectURL(video.src);
       };
 
       const handlePlay = () => {
-        hasPlayed = true;
-      };
-
-      const handleError = (e: Event) => {
-        hasError = true;
-        const videoError = (e.target as HTMLVideoElement).error;
-        if (videoError) {
-          switch (videoError.code) {
-            case MediaError.MEDIA_ERR_ABORTED:
-              errorMessage = 'Video playback was aborted.';
-              break;
-            case MediaError.MEDIA_ERR_NETWORK:
-              errorMessage = 'Network error occurred while loading video.';
-              break;
-            case MediaError.MEDIA_ERR_DECODE:
-              errorMessage = 'Video format is not supported.';
-              break;
-            case MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED:
-              errorMessage = 'Video format is not supported by your browser.';
-              break;
-            default:
-              errorMessage = 'An error occurred while playing the video.';
-          }
-        }
-        video.removeEventListener('play', handlePlay);
-        video.removeEventListener('error', handleError);
         cleanup();
-        resolve({ canPlay: false, error: errorMessage });
+        resolve({ canPlay: true });
       };
 
-      const handleTimeUpdate = () => {
-        // If video has played for at least 1 second without errors, consider it valid
-        if (video.currentTime >= 1) {
-          video.removeEventListener('play', handlePlay);
-          video.removeEventListener('error', handleError);
-          video.removeEventListener('timeupdate', handleTimeUpdate);
-          cleanup();
-          resolve({ canPlay: true });
-        }
+      const handleError = (e: Event | string) => {
+        cleanup();
+        resolve({ canPlay: false, error: 'Video cannot be played' });
       };
 
-      video.addEventListener('play', handlePlay);
-      video.addEventListener('error', handleError);
-      video.addEventListener('timeupdate', handleTimeUpdate);
-
-      // Set a timeout in case the video doesn't start playing
-      const timeoutId = setTimeout(() => {
-        if (!hasPlayed || hasError) {
-          video.removeEventListener('play', handlePlay);
-          video.removeEventListener('error', handleError);
-          video.removeEventListener('timeupdate', handleTimeUpdate);
-          cleanup();
-          resolve({ 
-            canPlay: false, 
-            error: hasError ? errorMessage : 'Video failed to start playing within 5 seconds.' 
-          });
-        }
+      video.oncanplay = handlePlay;
+      video.onerror = handleError;
+      video.src = URL.createObjectURL(blob);
+      
+      // Set a timeout in case the video doesn't load
+      setTimeout(() => {
+        cleanup();
+        resolve({ canPlay: false, error: 'Video loading timeout' });
       }, 5000);
-
-      try {
-        // Create a new blob with explicit type
-        const videoBlob = new Blob([blob], { type: blob.type || 'video/webm' });
-        blobUrl = URL.createObjectURL(videoBlob);
-        
-        // Set video properties before setting src
-        video.preload = 'auto';
-        video.crossOrigin = 'anonymous';
-        
-        // Use a data URL instead of blob URL for more reliable playback
-        const reader = new FileReader();
-        reader.onload = () => {
-          if (typeof reader.result === 'string') {
-            video.src = reader.result;
-            video.play().catch((error) => {
-              console.error('Error playing video:', error);
-              clearTimeout(timeoutId);
-              cleanup();
-              resolve({ canPlay: false, error: 'Failed to start video playback. Please try again.' });
-            });
-          } else {
-            clearTimeout(timeoutId);
-            cleanup();
-            resolve({ canPlay: false, error: 'Failed to process video data. Please try again.' });
-          }
-        };
-        reader.onerror = () => {
-          clearTimeout(timeoutId);
-          cleanup();
-          resolve({ canPlay: false, error: 'Failed to read video data. Please try again.' });
-        };
-        reader.readAsDataURL(videoBlob);
-      } catch (error) {
-        console.error('Error processing video for playback:', error);
-        clearTimeout(timeoutId);
-        cleanup();
-        resolve({ canPlay: false, error: 'Error processing video for playback. Please try again.' });
-      }
     });
   };
 
   const startRecording = () => {
-    if (!mediaStream) return;
-    setError(null);
-    setRecording(true);
-    setRecordedChunks([]);
-    setVideoUrl(null);
-    setIsVideoValid(false);
-    
+    if (!mediaStream) {
+      setError("No camera access. Please allow camera access.");
+      return;
+    }
+
     try {
-      // Check if we have both video and audio tracks in the stream
-      const videoTrack = mediaStream.getVideoTracks()[0];
-      const audioTrack = mediaStream.getAudioTracks()[0];
-      
-      if (!videoTrack) {
-        setError('No video track available. Please ensure your camera is working.');
-        setRecording(false);
-        return;
-      }
-      
-      if (!audioTrack) {
-        setError('No audio track available. Please ensure your microphone is enabled and working.');
-        setRecording(false);
-        return;
-      }
-
-      // Check for MP4 support with different codecs
+      // Check for supported MIME types
       const mimeTypes = [
-        'video/mp4;codecs=h264,aac',
-        'video/mp4;codecs=avc1.42E01E,mp4a.40.2',
-        'video/mp4',
-        'video/webm;codecs=h264,opus', // Fallback to WebM with H.264
-        'video/webm' // Last resort fallback
+        'video/webm;codecs=vp9,opus',
+        'video/webm;codecs=vp8,opus',
+        'video/webm'
       ];
+      
+      const supportedMimeType = mimeTypes.find(type => MediaRecorder.isTypeSupported(type)) || 'video/webm';
 
-      // Find the first supported mime type
-      const selectedMimeType = mimeTypes.find(type => MediaRecorder.isTypeSupported(type)) || 'video/mp4';
-      
-      if (!MediaRecorder.isTypeSupported(selectedMimeType)) {
-        setError('Your browser does not support video recording. Please try a different browser.');
-        setRecording(false);
-        return;
-      }
+      const options = {
+        mimeType: supportedMimeType
+      };
 
-      console.log('Using mime type:', selectedMimeType);
-      
-      const recorder = new MediaRecorder(mediaStream, {
-        mimeType: selectedMimeType,
-        videoBitsPerSecond: 2500000 // 2.5 Mbps for better quality
-      });
-      
-      setMediaRecorder(recorder);
-      let seconds = 0;
-      const interval = setInterval(() => {
-        seconds += 1;
-        setTimer(seconds);
-        if (seconds >= MAX_DURATION) {
-          stopRecordingHandler(recorder, interval);
+      const recorder = new MediaRecorder(mediaStream, options);
+      const chunks: Blob[] = [];
+
+      recorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          chunks.push(event.data);
         }
-      }, 1000);
-      setTimerInterval(interval);
+      };
+
+      recorder.onstop = async () => {
+        const blob = new Blob(chunks, { type: recorder.mimeType });
+        setRecordedChunks(chunks);
+        
+        // Validate video
+        const validation = await validateVideo(blob);
+        if (!validation.isValid) {
+          setError(validation.error || 'Invalid video');
+          return;
+        }
+
+        // Test playback
+        setIsTestingPlayback(true);
+        const playbackTest = await testVideoPlayback(blob);
+        setIsTestingPlayback(false);
+
+        if (!playbackTest.canPlay) {
+          setError(playbackTest.error || 'Video cannot be played');
+          return;
+        }
+
+        const url = URL.createObjectURL(blob);
+        setVideoUrl(url);
+        setIsVideoValid(true);
+      };
+
+      recorder.onerror = (event) => {
+        setError('Recording error: ' + event.error);
+      };
+
+      setMediaRecorder(recorder);
+      recorder.start(1000);
+      setRecording(true);
       setTimer(0);
       
-      recorder.ondataavailable = (e) => {
-        if (e.data.size > 0) {
-          setRecordedChunks((prev) => [...prev, e.data]);
-        }
-      };
-      
-      recorder.onstop = async () => {
-        clearInterval(interval);
-        setTimerInterval(null);
-        setRecording(false);
-        setTimer(0);
-        
-        try {
-          // Create a new blob with explicit type
-          const blob = new Blob(recordedChunks, { 
-            type: selectedMimeType.startsWith('video/mp4') ? 'video/mp4' : 'video/webm'
-          });
-          
-          // Validate video
-          setIsTestingPlayback(true);
-          const validationResult = await validateVideo(blob);
-          if (!validationResult.isValid) {
-            setError(validationResult.error || 'Video validation failed. Please try recording again.');
-            setIsTestingPlayback(false);
-            return;
+      // Start timer
+      const interval = setInterval(() => {
+        setTimer(prev => {
+          if (prev >= MAX_DURATION) {
+            stopRecordingHandler(recorder, interval);
+            return prev;
           }
-          
-          // Test playback
-          const playbackResult = await testVideoPlayback(blob);
-          if (!playbackResult.canPlay) {
-            setError(playbackResult.error || 'Video playback test failed. The video may be corrupted. Please try recording again.');
-            setIsTestingPlayback(false);
-            return;
-          }
-          
-          // Create a data URL for the video preview
-          const reader = new FileReader();
-          reader.onload = () => {
-            if (typeof reader.result === 'string') {
-              setIsVideoValid(true);
-              setIsTestingPlayback(false);
-              setVideoUrl(reader.result);
-              stopCamera();
-            } else {
-              setError('Failed to process video data. Please try recording again.');
-              setIsTestingPlayback(false);
-            }
-          };
-          reader.onerror = () => {
-            setError('Failed to process video data. Please try recording again.');
-            setIsTestingPlayback(false);
-          };
-          reader.readAsDataURL(blob);
-        } catch (error) {
-          console.error('Error processing recorded video:', error);
-          setError('Error processing recorded video. Please try recording again.');
-          setIsTestingPlayback(false);
-        }
-      };
-      
-      recorder.start(100); // Collect data every 100ms
-    } catch (err) {
-      console.error('Error starting recording:', err);
-      setError('Failed to start recording. Please try again.');
-      setRecording(false);
+          return prev + 1;
+        });
+      }, 1000);
+      setTimerInterval(interval);
+    } catch (error) {
+      setError('Failed to start recording: ' + error);
     }
   };
 
   const stopRecordingHandler = (recorder: MediaRecorder | null, interval: NodeJS.Timeout | null) => {
-    if (recorder && recorder.state !== "inactive") {
+    if (recorder && recorder.state !== 'inactive') {
       recorder.stop();
     }
     if (interval) {
@@ -424,30 +248,46 @@ export function VideoSection({ kycCaseId, onComplete, onFileUploaded }: VideoSec
         type: mediaRecorder.mimeType.startsWith('video/mp4') ? 'video/mp4' : 'video/webm'
       });
 
-      const formData = new FormData();
-      formData.append('file', blob, 'verification.mp4');
-      formData.append('kyc_case_id', kycCaseId);
-      formData.append('doc_type', 'video');
-
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
-      const response = await fetch(`${apiUrl}/kyc/upload`, {
-        method: 'POST',
-        body: formData,
+      // Convert blob to File
+      const file = new File([blob], 'verification.mp4', { 
+        type: mediaRecorder.mimeType.startsWith('video/mp4') ? 'video/mp4' : 'video/webm'
       });
 
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.detail || 'Failed to upload video');
-      }
+      // Use the new upload service with proper payload structure
+      const uploadResult = await upload({
+        file,
+        kycCaseId: kycCaseId,
+        documentType: "video",
+        userId: '1'
+      });
 
-      const result = await response.json();
-      setUploaded(true);
-      setUploading(false);
-      toast.success('Video uploaded successfully!');
-      if (onFileUploaded) {
-        onFileUploaded('video');
+      if (uploadResult.success) {
+        setUploaded(true);
+        setUploading(false);
+        toast.success(`Video uploaded successfully using ${isNewService ? 'Lambda service' : 'existing service'}`);
+        console.log("Video upload result:", uploadResult);
+        
+        // Log additional details for debugging
+        if (uploadResult.documentId) {
+          console.log(`Document ID: ${uploadResult.documentId}`);
+        }
+        if (uploadResult.s3Url) {
+          console.log(`S3 URL: ${uploadResult.s3Url}`);
+        }
+        if (uploadResult.originalFilename) {
+          console.log(`Original filename: ${uploadResult.originalFilename}`);
+        }
+        if (uploadResult.fileSize) {
+          console.log(`File size: ${uploadResult.fileSize} bytes`);
+        }
+        
+        if (onFileUploaded) {
+          onFileUploaded('video');
+        }
+        onComplete();
+      } else {
+        throw new Error(uploadResult.error || 'Failed to upload video');
       }
-      onComplete();
     } catch (error: any) {
       console.error('Upload error:', error);
       setError(error.message || 'Failed to upload video. Please try again.');
@@ -522,6 +362,32 @@ export function VideoSection({ kycCaseId, onComplete, onFileUploaded }: VideoSec
       <Card className="p-6">
         <div className="space-y-4">
           <h3 className="text-lg font-semibold">Video Verification</h3>
+          
+          {/* Upload Service Status */}
+          <div className="text-xs text-gray-500 bg-gray-50 p-2 rounded">
+            Using: {isNewService ? 'New Lambda Service' : 'Existing Service'}
+          </div>
+          
+          {/* Upload Progress */}
+          {isUploading && (
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-sm font-medium text-blue-900">
+                  Uploading video...
+                </span>
+                <span className="text-sm text-blue-700">
+                  {Math.round(uploadProgress)}%
+                </span>
+              </div>
+              <div className="w-full bg-blue-200 rounded-full h-2">
+                <div 
+                  className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                  style={{ width: `${uploadProgress}%` }}
+                />
+              </div>
+            </div>
+          )}
+
           {!videoUrl ? (
             <div className="flex flex-col items-center gap-4">
               {error && <p className="text-red-600 text-sm">{error}</p>}
@@ -572,6 +438,24 @@ export function VideoSection({ kycCaseId, onComplete, onFileUploaded }: VideoSec
             </div>
           ) : (
             renderVideoPreview()
+          )}
+          
+          {/* Upload Details */}
+          {lastUploadResult && (
+            <div className="mt-4 p-3 bg-gray-50 rounded text-xs">
+              <div className="font-medium mb-1">Upload Details:</div>
+              <div>Service: {isNewService ? 'Lambda' : 'Existing'}</div>
+              <div>Document ID: {lastUploadResult.documentId}</div>
+              {lastUploadResult.s3Url && (
+                <div className="truncate">S3 URL: {lastUploadResult.s3Url}</div>
+              )}
+              {lastUploadResult.originalFilename && (
+                <div>File: {lastUploadResult.originalFilename}</div>
+              )}
+              {lastUploadResult.fileSize && (
+                <div>Size: {(lastUploadResult.fileSize / 1024 / 1024).toFixed(2)} MB</div>
+              )}
+            </div>
           )}
         </div>
       </Card>
