@@ -133,11 +133,12 @@ export function VideoSection({ kycCaseId, onComplete, onFileUploaded }: VideoSec
     }
 
     try {
-      // Check for supported MIME types
+      // Check for supported MIME types - prefer simpler formats without codecs
       const mimeTypes = [
-        'video/webm;codecs=vp9,opus',
+        'video/webm',
+        'video/mp4',
         'video/webm;codecs=vp8,opus',
-        'video/webm'
+        'video/webm;codecs=vp9,opus'
       ];
       
       const supportedMimeType = mimeTypes.find(type => MediaRecorder.isTypeSupported(type)) || 'video/webm';
@@ -248,9 +249,26 @@ export function VideoSection({ kycCaseId, onComplete, onFileUploaded }: VideoSec
         type: mediaRecorder.mimeType.startsWith('video/mp4') ? 'video/mp4' : 'video/webm'
       });
 
-      // Convert blob to File
-      const file = new File([blob], 'verification.mp4', { 
-        type: mediaRecorder.mimeType.startsWith('video/mp4') ? 'video/mp4' : 'video/webm'
+      // Determine correct file extension and content type
+      const isMP4 = mediaRecorder.mimeType.startsWith('video/mp4');
+      const fileExtension = isMP4 ? 'mp4' : 'webm';
+      const contentType = isMP4 ? 'video/mp4' : 'video/webm';
+      const fileName = `verification.${fileExtension}`;
+
+      // Convert blob to File with correct extension and content type
+      const file = new File([blob], fileName, { 
+        type: contentType
+      });
+
+      // Debug logging
+      console.log('Video upload details:', {
+        originalMimeType: mediaRecorder.mimeType,
+        cleanContentType: contentType,
+        fileName: fileName,
+        fileSize: file.size,
+        fileType: file.type,
+        blobSize: blob.size,
+        blobType: blob.type
       });
 
       // Use the new upload service with proper payload structure

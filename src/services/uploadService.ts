@@ -36,14 +36,36 @@ const getActiveUploadService = (): UploadServiceType => {
 const fileToBase64 = (file: File): Promise<string> => {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
-    reader.readAsDataURL(file);
+    
     reader.onload = () => {
-      const base64 = reader.result as string;
-      // Remove the data URL prefix (e.g., "data:image/png;base64,")
-      const base64Data = base64.split(',')[1];
-      resolve(base64Data);
+      try {
+        const base64 = reader.result as string;
+        // Remove the data URL prefix (e.g., "data:image/png;base64,")
+        const base64Data = base64.split(',')[1];
+        
+        if (!base64Data) {
+          reject(new Error('Failed to convert file to base64: no data found'));
+          return;
+        }
+        
+        console.log(`File converted to base64: ${file.name}, size: ${file.size}, base64 length: ${base64Data.length}`);
+        resolve(base64Data);
+      } catch (error) {
+        reject(new Error(`Failed to process base64 data: ${error}`));
+      }
     };
-    reader.onerror = error => reject(error);
+    
+    reader.onerror = (error) => {
+      console.error('FileReader error:', error);
+      reject(new Error(`Failed to read file: ${error}`));
+    };
+    
+    reader.onabort = () => {
+      reject(new Error('File reading was aborted'));
+    };
+    
+    // Read file as data URL
+    reader.readAsDataURL(file);
   });
 };
 
@@ -55,15 +77,27 @@ export const uploadToNewService = async (request: UploadRequest): Promise<Upload
     // Convert file to base64
     const base64Data = await fileToBase64(file);
     
+    // Clean up content type for video files - remove codec information
+    let cleanContentType = file.type;
+    if (file.type.startsWith('video/')) {
+      // Remove codec information from video content type
+      cleanContentType = file.type.split(';')[0];
+    }
+    
     // Prepare payload for new service
     const payload = {
       fileBuffer: base64Data,
       originalFilename: file.name,
-      contentType: file.type,
+      contentType: cleanContentType,
       kycCaseId: parseInt(kycCaseId),
       docType: documentType,
       userId: parseInt(userId)
     };
+
+    console.log('Upload payload:', {
+      ...payload,
+      fileBuffer: payload.fileBuffer.substring(0, 50) + '...' // Log first 50 chars of base64
+    });
 
     const response = await fetch(process.env.NEXT_PUBLIC_UPLOAD_API_URL || 'https://tbbnyplmp6.execute-api.us-east-2.amazonaws.com/dev/upload', {
       method: 'POST',
@@ -74,6 +108,8 @@ export const uploadToNewService = async (request: UploadRequest): Promise<Upload
     });
 
     if (!response.ok) {
+      const errorText = await response.text();
+      console.error('Upload response error:', errorText);
       throw new Error(`Upload failed: ${response.status} ${response.statusText}`);
     }
 

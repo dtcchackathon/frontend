@@ -125,10 +125,10 @@ export const MediaRecorderComponent: React.FC<MediaRecorderComponentProps> = ({
 
   const getSupportedMimeType = () => {
     const mimeTypes = [
-      'video/webm;codecs=vp9,opus',
-      'video/webm;codecs=vp8,opus',
       'video/webm',
-      'video/mp4'
+      'video/mp4',
+      'video/webm;codecs=vp8,opus',
+      'video/webm;codecs=vp9,opus'
     ];
 
     for (const mimeType of mimeTypes) {
@@ -173,7 +173,14 @@ export const MediaRecorderComponent: React.FC<MediaRecorderComponentProps> = ({
       mediaRecorder.onstop = async () => {
         console.log('Recording stopped, processing...');
         const blob = new Blob(chunks, { type: mimeType });
-        const file = new File([blob], 'verification.mp4', { type: mimeType });
+        
+        // Determine correct file extension and content type
+        const isMP4 = mimeType.startsWith('video/mp4');
+        const fileExtension = isMP4 ? 'mp4' : 'webm';
+        const contentType = isMP4 ? 'video/mp4' : 'video/webm';
+        const fileName = `verification.${fileExtension}`;
+        
+        const file = new File([blob], fileName, { type: contentType });
 
         setRecordedFile(file);
         setStatus('stopped');
@@ -275,6 +282,14 @@ export const MediaRecorderComponent: React.FC<MediaRecorderComponentProps> = ({
     setIsUploading(true);
     
     try {
+      // Debug logging
+      console.log('MediaRecorder upload details:', {
+        fileName: recordedFile.name,
+        fileSize: recordedFile.size,
+        fileType: recordedFile.type,
+        lastModified: recordedFile.lastModified
+      });
+
       // Use the new upload service with proper payload structure
       const uploadResult = await upload({
         file: recordedFile,
