@@ -94,7 +94,7 @@ export function SelfieSection({ kycCaseId, onComplete, onFileUploaded }: SelfieS
       const uploadResult = await upload({
         file,
         kycCaseId: kycCaseId,
-        documentType: "photo", // Using "photo" as doctype as per working example
+        documentType: "selfie", // Using "photo" as doctype as per working example
         userId: '1'
       });
 
